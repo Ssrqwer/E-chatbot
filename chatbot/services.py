@@ -1,8 +1,4 @@
 import os
-import google.generativeai as genai
-from .context import STORE_INFO, PRODUCT_SUMMARY
-from .prompts import SYSTEM_PROMPT
-
 
 class KeyManager:
     def __init__(self):
@@ -24,17 +20,29 @@ class KeyManager:
 class GeminiService:
     def __init__(self):
         self.key_manager = KeyManager()
-        self._setup_model()
+        self.model = None
+        self.current_key = None
 
     def _setup_model(self):
+        if self.model is not None:
+            return
+        
+        import google.generativeai as genai
+        
         key = self.key_manager.get_key()
         if not key:
             raise Exception("All API keys exhausted. Please try again later.")
+        
         genai.configure(api_key=key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.0-flash')
         self.current_key = key
 
     def chat(self, message, history):
+        self._setup_model()
+        
+        from .context import STORE_INFO, PRODUCT_SUMMARY
+        from .prompts import SYSTEM_PROMPT
+        
         try:
             context = f"Categories: {', '.join(STORE_INFO['categories'])}\nProducts: {PRODUCT_SUMMARY}"
             history_text = self._format_history(history)
@@ -50,9 +58,9 @@ class GeminiService:
             error_msg = str(e).lower()
             if "quota" in error_msg or "exhausted" in error_msg or "limit" in error_msg:
                 self.key_manager.mark_failed(self.current_key)
+                self.model = None
                 if self.key_manager.is_exhausted():
                     return "All API keys are exhausted. Please try again tomorrow."
-                self._setup_model()
                 return self.chat(message, history)
             return f"Error: {str(e)}"
 
