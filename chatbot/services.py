@@ -26,23 +26,23 @@ class GeminiService:
     def _setup_model(self):
         if self.model is not None:
             return
-        
+
         import google.generativeai as genai
-        
+
         key = self.key_manager.get_key()
         if not key:
-            raise Exception("All API keys exhausted. Please try again later.")
-        
+            raise Exception("All API keys exhausted")
+
         genai.configure(api_key=key)
         self.model = genai.GenerativeModel('gemini-2.0-flash')
         self.current_key = key
 
     def chat(self, message, history):
         self._setup_model()
-        
+
         from .context import STORE_INFO, PRODUCT_SUMMARY
         from .prompts import SYSTEM_PROMPT
-        
+
         try:
             context = f"Categories: {', '.join(STORE_INFO['categories'])}\nProducts: {PRODUCT_SUMMARY}"
             history_text = self._format_history(history)
@@ -54,14 +54,16 @@ class GeminiService:
             )
             response = self.model.generate_content(prompt)
             return response.text.strip()
+
         except Exception as e:
             error_msg = str(e).lower()
             if "quota" in error_msg or "exhausted" in error_msg or "limit" in error_msg:
                 self.key_manager.mark_failed(self.current_key)
                 self.model = None
-                if self.key_manager.is_exhausted():
-                    return "All API keys are exhausted. Please try again tomorrow."
-                return self.chat(message, history)
+                self.current_key = None
+                if not self.key_manager.is_exhausted():
+                    return self.chat(message, history)
+                return "All API keys are exhausted. Please try again tomorrow."
             return f"Error: {str(e)}"
 
     def _format_history(self, history):
